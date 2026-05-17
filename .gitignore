@@ -16,3 +16,5 @@ ia_lichia/frames/
 
 # Outros
 .streamlit/secrets.toml
+
+logs/

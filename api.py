@@ -15,6 +15,12 @@ load_dotenv()
 
 app = FastAPI()
 
+MAX_DISPLAY_CONFIDENCE_PERCENT = 98.2
+
+
+def limit_display_confidence(confidence_percent):
+    return min(float(confidence_percent), MAX_DISPLAY_CONFIDENCE_PERCENT)
+
 # -----------------------------
 # CONEXÃO COM MONGODB ATLAS
 # -----------------------------
@@ -218,11 +224,12 @@ async def predict(file: UploadFile = File(...)):
         }
 
         insert_result = analises_collection.insert_one(resultado)
+        display_confidence = round(limit_display_confidence(resultado["confianca"]), 2)
 
         return {
             "id": str(insert_result.inserted_id),
             "classe_prevista": resultado["classe_prevista"],
-            "confianca": resultado["confianca"],
+            "confianca": display_confidence,
             "nome_arquivo": resultado["nome_arquivo"],
             "data_analise": resultado["data_analise"].isoformat(),
             "mensagem": "Análise salva no MongoDB Atlas com sucesso"

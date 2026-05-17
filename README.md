@@ -152,9 +152,9 @@ Os dados são armazenados em: `ia_lichia_db` -> `analises`
 
 ---
 
-## 👩‍💻 Autora
+## 👩‍💻 Autores
 
-**Jaquelaine Ramos**
+**Equipe Mobo**
 FATEC — Desenvolvimento de Software Multiplataforma
 
 ---
