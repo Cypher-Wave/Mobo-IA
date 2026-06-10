@@ -69,7 +69,7 @@ source .venv/bin/activate
 ### 3. Instalar dependências
 
 ```bash
-pip install -r requisitos.txt
+pip install -r requirements.txt
 ```
 
 ### 4. Configurar MongoDB Atlas
