@@ -10,8 +10,10 @@ from matplotlib.patches import Rectangle
 from sklearn.metrics import classification_report, confusion_matrix
 from tensorflow.keras import layers, models
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from sklearn.utils.class_weight import compute_class_weight
 
-IMG_HEIGHT, IMG_WIDTH = 150, 150
+
+IMG_HEIGHT, IMG_WIDTH = 224, 224
 BATCH_SIZE = 32
 EPOCHS = 20
 
@@ -70,6 +72,13 @@ test_generator = val_test_datagen.flow_from_directory(
 class_indices = validation_generator.class_indices
 index_to_class = {v: k for k, v in class_indices.items()}
 
+class_weights = compute_class_weight(
+    class_weight="balanced",
+    classes=np.unique(train_generator.classes),
+    y=train_generator.classes
+)
+class_weight_dict = dict(enumerate(class_weights))
+print(f"Class weights: {class_weight_dict}")
 
 def plot_to_tensorboard_image(figure):
     buf = io.BytesIO()
@@ -183,10 +192,15 @@ class PredictionVideoLoggerCallback(tf.keras.callbacks.Callback):
     def on_train_end(self, logs=None):
         images = [imageio.imread(frame) for frame in self.saved_frames]
         if images:
-            gif_path = os.path.join(self.frames_directory, "treinamento_ia_lichia.gif")
-            imageio.mimsave(gif_path, images, fps=1)
-            print(f"\nGIF salvo em: {gif_path}")
-             # MP4 opcional: só tenta salvar se houver backend disponível
+            # Padroniza todas para o tamanho do primeiro frame
+            h, w = images[0].shape[:2]
+            images = [img if img.shape[:2] == (h, w) else 
+                np.array(tf.image.resize(img, [h, w]).numpy().astype(np.uint8))
+                for img in images]
+        
+        gif_path = os.path.join(self.frames_directory, "treinamento_ia_lichia.gif")
+        imageio.mimsave(gif_path, images, fps=1)
+        print(f"\nGIF salvo em: {gif_path}")
         try:
             mp4_path = os.path.join(self.frames_directory, "treinamento_ia_lichia.mp4")
             with imageio.get_writer(mp4_path, fps=1) as writer:
@@ -206,18 +220,18 @@ prediction_video_logger_callback = PredictionVideoLoggerCallback(
 )
 
 # Model
+base_model = tf.keras.applications.MobileNetV2(
+    input_shape=(IMG_HEIGHT, IMG_WIDTH, 3),
+    include_top=False,
+    weights="imagenet"
+)
+base_model.trainable = False  # congela os pesos pré-treinados
 model = models.Sequential([
-    layers.Input(shape=(IMG_HEIGHT, IMG_WIDTH, 3)),
-    layers.Conv2D(32, (3, 3), activation="relu"),
-    layers.MaxPooling2D((2, 2)),
-    layers.Conv2D(64, (3, 3), activation="relu"),
-    layers.MaxPooling2D((2, 2)),
-    layers.Conv2D(128, (3, 3), activation="relu"),
-    layers.MaxPooling2D((2, 2)),
-    layers.Flatten(),
-    layers.Dropout(0.5),
-    layers.Dense(512, activation="relu"),
+    base_model,
+    layers.GlobalAveragePooling2D(),
     layers.Dropout(0.3),
+    layers.Dense(128, activation="relu"),
+    layers.Dropout(0.2),
     layers.Dense(1, activation="sigmoid")
 ])
 
@@ -249,7 +263,32 @@ history = model.fit(
     epochs=EPOCHS,
     validation_data=validation_generator,
     validation_steps=validation_generator.samples // BATCH_SIZE,
-    callbacks=callbacks
+    callbacks=callbacks,
+    class_weight=class_weight_dict
+)
+
+# Descongela as últimas 30 camadas do MobileNetV2
+base_model = model.get_layer("mobilenetv2_1.00_224")
+base_model.trainable = True
+for layer in base_model.layers[:-30]:
+    layer.trainable = False
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(1e-5),
+    loss="binary_crossentropy",
+    metrics=["accuracy"]
+)
+
+train_generator.reset()
+validation_generator.reset()
+
+history_fine = model.fit(
+    train_generator,
+    steps_per_epoch=train_generator.samples // BATCH_SIZE,
+    epochs=10,
+    validation_data=validation_generator,
+    validation_steps=validation_generator.samples // BATCH_SIZE,
+    class_weight=class_weight_dict
 )
 
 # Avaliação no conjunto de teste

@@ -15,8 +15,8 @@ from PIL import Image, ImageDraw, ImageFont
 # CONFIGURAÇÕES GERAIS
 # -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
-IMG_HEIGHT, IMG_WIDTH = 150, 150
-LAST_CONV_LAYER_NAME = "conv2d_2"
+IMG_HEIGHT, IMG_WIDTH = 224, 224
+LAST_CONV_LAYER_NAME = "out_relu"
 
 MODEL_PATH = BASE_DIR / "ia_lichia" / "modelo_lichia.keras"
 LOGO_PATH = BASE_DIR / "LOGO SPLASH SCREEN.png"
@@ -113,20 +113,33 @@ def preprocess_image(image):
 
 
 def make_gradcam_heatmap(img_array, model, last_conv_layer_name):
-    grad_model = tf.keras.models.Model(
-        [model.inputs],
-        [model.get_layer(last_conv_layer_name).output, model.output]
+    base_model = model.get_layer("mobilenetv2_1.00_224")
+
+    # Cria modelo funcional passando pelo base_model e depois pelas camadas restantes
+    inputs = tf.keras.Input(shape=img_array.shape[1:])
+    conv_outputs = base_model(inputs)
+    
+    # Pega saída da última conv dentro do base_model
+    inner_model = tf.keras.models.Model(
+        inputs=base_model.input,
+        outputs=base_model.get_layer(last_conv_layer_name).output
     )
 
     with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(img_array)
+        conv_out = inner_model(img_array)
+        tape.watch(conv_out)
+        
+        # Passa conv_out pelo resto do modelo manualmente
+        x = conv_out
+        for layer in model.layers[1:]:  # pula o base_model
+            x = layer(x)
+        predictions = x
         class_channel = predictions[:, 0]
 
-    grads = tape.gradient(class_channel, conv_outputs)
+    grads = tape.gradient(class_channel, conv_out)
     pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
 
-    conv_outputs = conv_outputs[0]
-    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+    heatmap = conv_out[0] @ pooled_grads[..., tf.newaxis]
     heatmap = tf.squeeze(heatmap)
 
     max_val = tf.math.reduce_max(heatmap)

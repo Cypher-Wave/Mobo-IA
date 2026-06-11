@@ -5,7 +5,6 @@ from datetime import datetime
 import numpy as np
 import tensorflow as tf
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, HTTPException
 from PIL import Image
 from pymongo import MongoClient
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
@@ -43,7 +42,7 @@ model = tf.keras.models.load_model(MODEL_PATH)
 
 
 def preprocess_image(image):
-    image = image.resize((150, 150))
+    image = image.resize((224, 224))
     image = np.array(image, dtype=np.float32) / 255.0
     image = np.expand_dims(image, axis=0)
     return image
